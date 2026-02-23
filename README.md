@@ -8,3 +8,4 @@ Official implementation of
 ## DFA Overview
 
 ![DFA Overview](figures/DFA_overview.jpeg)
+*Figure 1: Dynamic Focal Attention (DFA) overview.*
