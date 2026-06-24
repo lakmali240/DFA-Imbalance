@@ -4,6 +4,7 @@ from segment_anything.modeling.common import LayerNorm2d
 
 import torch
 from torch import nn
+import torch.nn as nn
 
 class EncoderWrapper(nn.Module):
     def __init__(self, model, ft_dim, out_dim, neck=True, re_norm = False, mean=None, std=None):

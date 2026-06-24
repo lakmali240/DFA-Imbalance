@@ -1,0 +1,2 @@
+1|<path to WSI #1>
+2|<path to WSI #2>

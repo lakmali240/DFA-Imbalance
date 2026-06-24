@@ -1,65 +1,217 @@
-# SAM-Path: A Segment Anything Model for Semantic Segmentation in Digital Pathology
-Pytorch implementation for the SAM-PAth framework described in the paper [SAM-Path: A Segment Anything Model for Semantic Segmentation in Digital Pathology](https://link.springer.com/chapter/10.1007/978-3-031-47401-9_16), [arxiv](https://arxiv.org/abs/2307.09570) and (_MedAGI 2023, accepted for oral presentation_).  
-<div>
-  <img src="imgs/overview.png" width="100%"  alt="The overview of our framework."/>
-</div>
-
 ## Installation
-Install [Anaconda/miniconda](https://www.anaconda.com/products/distribution).  
-Install the dependencies of [SAM](https://github.com/facebookresearch/segment-anything). Please do not install the original SAM itself as we made some modifications.
 
-Then Install required packages:
+The environment is the same as [SAM-Path](https://github.com/cvlab-stonybrook/SAMPath).
+
+```bash
+# 1) create the environment
+conda create -n dfa python=3.10 -y
+conda activate dfa
+
+# 2) install PyTorch (pick the build matching your CUDA version)
+#    see https://pytorch.org/get-started/locally/
+pip install torch torchvision
+
+# 3) install the remaining dependencies
+pip install -r requirements.txt
 ```
-  $ pip install monai torchmetrics==0.11.4 pytorch_lightning==2.0.2 albumentations box wandb
+
+> **Do not** `pip install segment-anything` — this repo vendors a **modified** copy of SAM in
+> `segment_anything/`. Installing the upstream package would shadow the DFA changes.
+
+Some packages need system libraries: `pyvips` needs **libvips**, `jpeg4py` needs
+**libturbojpeg**, and `openslide-python` needs the **OpenSlide** C library. On Ubuntu:
+
+```bash
+sudo apt-get install libvips libturbojpeg openslide-tools
 ```
-## Data organization
-Our dataset is organized as csv indicated datasets. All the images and masks should be stored in a directory and the path of this directory (```dataset_root```) should be set in the config file.
-The root directory should contain two sub-directories ```img``` and ```mask```. All the input images and masks should be directly put into these two sub-directories respectively.
-Our preprocessed dataset can be downloaded from: [https://drive.google.com/drive/folders/1BUPZz3nB52J5zRs1ZcEvNK03zw18BeLN?usp=sharing](https://drive.google.com/drive/folders/1BUPZz3nB52J5zRs1ZcEvNK03zw18BeLN?usp=sharing)
 
-The file names and train/validation/test separation are listed in the csv file. This csv file should contain 2 columns: ```img_id``` and ```fold```. ```img_id``` is the filename of input image without the file extension. ```fold``` is the integer label of an input image. -1 means it is a test sample. We use the ```fold=0``` as the validation dataset and ```fold=1,2,3,4``` as the training dataset. The csv files we used are provided in the ```dataset_cfg``` folder. 
+---
 
+## Pretrained encoder weights
+
+DFA uses the **exact same frozen encoders as SAM-Path**: SAM ViT-B and HIPT ViT-256.
+Download them and place them in `checkpoints/`:
+
+| file | encoder | source |
+|------|---------|--------|
+| `sam_vit_b_01ec64.pth`  | SAM ViT-B | https://github.com/facebookresearch/segment-anything#model-checkpoints |
+| `vit256_small_dino.pth` | HIPT      | https://github.com/mahmoodlab/HIPT#pre-reqs--installation |
+
+```
+checkpoints/
+├── sam_vit_b_01ec64.pth
+└── vit256_small_dino.pth
+```
+
+You also need to vendor the HIPT backbone source into `network/hipt/`
+(see [`network/hipt/README.md`](network/hipt/README.md)).
+
+---
+
+## Data preparation
+
+Data is organized exactly as in SAM-Path. A `dataset_root` directory contains two
+sub-directories, `img/` and `mask/`, with all images and masks placed directly inside them:
+
+```
+<dataset_root>/
+├── img/      # input RGB patches (e.g. .png)
+└── mask/     # integer label masks (label 0 = unlabeled / outside ROI)
+```
+
+Train / val / test assignment is given by a CSV in `dataset_cfg/` with two columns:
+
+| column   | meaning                                                   |
+|----------|-----------------------------------------------------------|
+| `img_id` | image filename **without** extension                      |
+| `fold`   | integer fold; `-1` = test, `0` = validation, `1–4` = train |
+
+The preprocessed public datasets and the official split CSVs are available from the SAM-Path
+release: https://drive.google.com/drive/folders/1BUPZz3nB52J5zRs1ZcEvNK03zw18BeLN
+
+> The CSVs committed here contain only a header row — populate them with your own splits or
+> drop in the SAM-Path CSVs. See [`dataset_cfg/README.md`](dataset_cfg/README.md).
+
+---
+
+## Configuration
+
+Each dataset has a config module in `configs/`. **Before running, edit the paths** at the top
+of the config you intend to use:
+
+- `model.checkpoint`        → `./checkpoints/sam_vit_b_01ec64.pth`
+- `model.extra_checkpoint`  → `./checkpoints/vit256_small_dino.pth`
+- `dataset.dataset_root`    → your `dataset_root` (containing `img/` and `mask/`)
+- `dataset.dataset_csv_path`→ `./dataset_cfg/<NAME>_cv.csv`
+- `out_dir`                 → where checkpoints / logs are written
+
+Key DFA knobs (in `focal_attention` / `loss`):
+
+| key | meaning |
+|-----|---------|
+| `focal_attention.enabled` | turn DFA on/off |
+| `focal_attention.delta_init_scale` | warm-start strength (`0.0` = cold start) |
+| `focal_attention.use_prior_in_forward` | `False` → `b_c = δ_c` (DFA); `True` → `b_c = log(π_c) + δ_c` (anchored ablation) |
+| `focal_attention.gamma` | `γ` in the warm-start prior `log(π_c)=γ·log(1−f_c)` |
+| `loss.delta_lr_multiplier` | dedicated learning-rate multiplier for `δ_c` |
+| `loss.bias_l2_lambda` | L2 penalty on `δ_c` (set to `0.0`) |
+
+---
 
 ## Training
-We used ```train.py``` to train and evaluate our framework. 
-```
-usage: main.py [--config CONFIG_PATH] [--devices GPU_ID]
-               [--project PROJECT_NAME] [----name RUN_NAME]
-```
-For example:
-```
-python main.py --config configs.BCSS --devices 0 --project sampath --name bcss_run0
-python main.py --config configs.CRAG --devices 1 --project sampath --name crag_run0
-```
-Config files are located in the ```configs``` folder. Not the extension ```.py``` should not be included and the sub-folders should be linked by ```.```
-Pretrained SAM and HIPT models can be downloaded from their ogriginal repository: [SAM](https://github.com/facebookresearch/segment-anything#model-checkpoints) and [HIPT](https://github.com/mahmoodlab/HIPT#pre-reqs--installation).
 
-## Predicting
-We used ```predict.py``` to predict the mask of a dataset. 
-```
-usage: predict.py [--config CONFIG_PATH] [--devices GPU_ID]
-                  [--pretrained path_to_pretrained_weights] 
-                  [--input_dir path_to_image_directory] 
-                  [--data_ext image_extension] 
-                  [--output_dir path_to_output_directory]
-```
-For example:
-```
-python predict.py --config configs.BCSS --input_dir path_to_image_directory --data_ext .png --output_dir path_to_output_directory --pretrained /.../model.ckpt  --devices 2
-```
-Note that we always use label 0 as the unlabeled region. If the dataset does not contain any unlabeled region, all the predicted masks need be subtracted by 1.
+`main_save_best.py` is the training/validation entry point.
 
+```
+usage: main_save_best.py [--config CONFIG_MODULE] [--devices GPU_IDS]
+                         [--project PROJECT_NAME] [--name RUN_NAME]
+```
 
-## Contact
-If you have any questions or concerns, feel free to report issues or directly contact us (Jingwei Zhang <jingwezhang@cs.stonybrook.edu>). 
+The `--config` value is a Python module path (dotted, no `.py` extension), e.g.
+`configs.BCSS_DFA`.
+
+```bash
+# BCSS (public)
+python main_save_best.py --config configs.BCSS_DFA --devices 0 --project DFA --name bcss_dfa_run0
+
+# CRAG (public)
+python main_save_best.py --config configs.CRAG_DFA --devices 0 --project DFA --name crag_dfa_run0
+
+# BDSA (private)
+python main_save_best.py --config configs.BDSA_DFA --devices 0 --project DFA --name bdsa_dfa_run0
+```
+
+Multi-GPU: pass a comma-separated list, e.g. `--devices 0,1,2,3`.
+
+A SLURM launcher template is provided in [`scripts/run_train.sh`](scripts/run_train.sh).
+Authenticate Weights & Biases with `wandb login` (or `export WANDB_API_KEY=...`) before
+training; **never commit your API key**.
+
+---
+
+## Prediction / inference
+
+`predict.py` writes predicted masks for a directory of images.
+
+```
+usage: predict.py [--config CONFIG_MODULE] [--devices GPU_ID]
+                  [--pretrained PATH_TO_CHECKPOINT]
+                  [--input_dir IMAGE_DIR] [--data_ext IMAGE_EXT]
+                  [--output_dir OUTPUT_DIR]
+```
+
+```bash
+python predict.py --config configs.BCSS_DFA \
+    --input_dir /path/to/images --data_ext .png \
+    --output_dir /path/to/output \
+    --pretrained ./outputs/BCSS_DFA/<run_id>/checkpoints/last.ckpt \
+    --devices 0
+```
+
+> Label `0` is always the unlabeled region. If your dataset has no unlabeled region, subtract
+> `1` from every predicted mask.
+
+---
+
+## Whole-slide-image (WSI) inference
+
+The `DFA_inference/` pipeline tiles a WSI, runs the trained model patch-by-patch, and stitches
+the predictions back into a full-slide segmentation:
+
+1. `patch_extraction.py` — tile a WSI into patches.
+2. `run_all_wsis_batch.sh` — batch driver over a list of slides in `wsi_config.txt`.
+3. `WSI_patch_stitching.py` — stitch patch predictions into a slide-level mask.
+4. `visualization_stitched_WSI.py` — render overlays.
+5. `generate_runtime_report.py` — summarize runtime.
+
+Edit `DFA_inference/wsi_config.txt` (one `id|path` per slide) and the path/checkpoint
+variables at the top of `run_all_wsis_batch.sh` for your environment.
+
+---
+
+## Datasets
+
+| dataset | type | classes | notes |
+|---------|------|---------|-------|
+| **BCSS** | public | 6 (0 = ignored) | Breast-cancer semantic segmentation |
+| **CRAG** | public | gland segmentation | Colorectal adenocarcinoma glands |
+| **BDSA** | **private** | 6 (0 = ignored) | 10 WSIs, ~82k 1024² patches; held out at the slide level |
+
+We follow the SAM-Path protocol: one fixed train/val/test split per dataset (no
+cross-validation), with 20% of the training data held out for validation. BDSA is private and
+is **not** distributed with this repository.
+
+---
+
+## Acknowledgements
+
+This work builds directly on:
+
+- **SAM** — Segment Anything, Meta AI ([repo](https://github.com/facebookresearch/segment-anything))
+- **SAM-Path** — Zhang et al., MedAGI 2023 ([repo](https://github.com/cvlab-stonybrook/SAMPath), [paper](https://link.springer.com/chapter/10.1007/978-3-031-47401-9_16))
+- **HIPT** — Chen et al., CVPR 2022 ([repo](https://github.com/mahmoodlab/HIPT))
+
+See [`NOTICE`](NOTICE) for full attribution. The DFA contribution is original to this repo.
+
+---
 
 ## Citation
-If you use the code or results in your research, please use the following BibTeX entry.  
-```
-@article{zhang2023sam,
-  title={SAM-Path: A Segment Anything Model for Semantic Segmentation in Digital Pathology},
-  author={Zhang, Jingwei and Ma, Ke and Kapse, Saarthak and Saltz, Joel and Vakalopoulou, Maria and Prasanna, Prateek and Samaras, Dimitris},
-  journal={arXiv preprint arXiv:2307.09570},
-  year={2023}
+
+If you use this code, please cite our paper (DFA) **and** SAM-Path:
+
+```bibtex
+@article{kumari2026dynamic,
+  title         = {Learning Class Difficulty in Imbalanced Histopathology Segmentation via Dynamic Focal Attention},
+  author        = {Kumari, Lakmali Nadeesha and Cheung, Sen-Ching Samson},
+  journal       = {arXiv preprint arXiv:2604.13479},
+  year          = {2026},
+  doi           = {10.48550/arXiv.2604.13479},
+  eprint        = {2604.13479},
+  archivePrefix = {arXiv},
+  primaryClass  = {eess.IV}
 }
 ```
+
+---
+
+*Released under the Apache License 2.0. Code released upon paper acceptance.*
