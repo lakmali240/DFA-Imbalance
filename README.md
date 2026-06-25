@@ -1,3 +1,22 @@
+# Dynamic Focal Attention (DFA)
+
+**Paper:** *Learning Class Difficulty in Imbalanced Histopathology Segmentation via Dynamic Focal Attention*  
+
+**Status:** Accepted to **MICCAI 2026**
+
+**arXiv:** [arxiv](https://arxiv.org/abs/2604.13479)
+
+<p align="center">
+  <img src="DFA_Overview.png" alt="DFA overview" width="95%">
+</p>
+
+<p align="center">
+  <b>Overview of Dynamic Focal Attention (DFA).</b>
+</p>
+
+Dynamic Focal Attention introduces a learnable class-difficulty bias into the attention mechanism to improve segmentation performance under severe class imbalance. The bias is initialized from class rarity and updated during training, allowing the model to dynamically emphasize difficult and underrepresented tissue classes.
+
+
 ## Installation
 
 The environment is the same as [SAM-Path](https://github.com/cvlab-stonybrook/SAMPath).
