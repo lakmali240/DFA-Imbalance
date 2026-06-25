@@ -34,7 +34,7 @@ pip install torch torchvision
 pip install -r requirements.txt
 ```
 
-> **Do not** `pip install segment-anything` — this repo vendors a **modified** copy of SAM in
+> **Do not** `pip install segment-anything` — this repo **modified** copy of SAM in
 > `segment_anything/`. Installing the upstream package would shadow the DFA changes.
 
 Some packages need system libraries: `pyvips` needs **libvips**, `jpeg4py` needs
@@ -61,11 +61,6 @@ checkpoints/
 ├── sam_vit_b_01ec64.pth
 └── vit256_small_dino.pth
 ```
-
-You also need to vendor the HIPT backbone source into `network/hipt/`
-(see [`network/hipt/README.md`](network/hipt/README.md)).
-
----
 
 ## Data preparation
 
