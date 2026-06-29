@@ -141,8 +141,10 @@ def get_model(cfg):
     return model
 
 
+
 def get_data_module(cfg):
     from image_mask_dataset import GeneralDataModule, ImageMaskDataset, FtMaskDataset
+    from bdsa_dataset import BCSSImageMaskDataset 
     augs = get_augmentation(cfg)
     common_cfg = {
         "dataset_root":      cfg.dataset.dataset_root,
@@ -153,32 +155,12 @@ def get_data_module(cfg):
         "dataset_std":       cfg.dataset.dataset_std,
         "ignored_classes":   cfg.dataset.ignored_classes,
     }
-    dataset_cls = FtMaskDataset if cfg.dataset.feature_input else ImageMaskDataset
+    dataset_cls = FtMaskDataset if cfg.dataset.feature_input else BCSSImageMaskDataset
+    # dataset_cls = FtMaskDataset if cfg.dataset.feature_input else ImageMaskDataset
     return GeneralDataModule(common_cfg, dataset_cls, cus_transforms=augs,
                              batch_size=cfg.batch_size, num_workers=cfg.num_workers)
 
 
-# def get_pl_module(cfg, model, metrics):
-#     loss_cfg = cfg.get("loss", {})
-
-#     pl_module = SamSeg(
-#         cfg=cfg,
-#         sam_model=model,
-#         metrics=metrics,
-#         num_classes=cfg.dataset.num_classes,
-#         focal_cof=loss_cfg.get("focal_cof", 20.),
-#         dice_cof=loss_cfg.get("dice_cof",   1.),
-#         ce_cof=loss_cfg.get("ce_cof",       0.),
-#         iou_cof=loss_cfg.get("iou_cof",     1.),
-#         lr=cfg.opt.learning_rate,
-#         weight_decay=cfg.opt.weight_decay,
-#         lr_steps=cfg.opt.steps,
-#         warmup_steps=cfg.opt.warmup_steps,
-#         ignored_index=cfg.dataset.ignored_classes_metric,
-#         delta_lr_multiplier=loss_cfg.get("delta_lr_multiplier", 100.0),
-#         bias_l2_lambda=loss_cfg.get("bias_l2_lambda", 0.0001),
-#     )
-#     return pl_module
 
 def get_pl_module(cfg, model, metrics):
     loss_cfg = cfg.get("loss", {})
